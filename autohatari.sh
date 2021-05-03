@@ -42,8 +42,9 @@ then
 fi
 
 filebase="${1%.*}"
+createdexec="${filebase}.tos"   # somewhere here add option to also use prg as result
 firstrun=1
-export SDL_VIDEO_WINDOW_POS="0,0"
+export SDL_VIDEO_WINDOW_POS="0,0"   # this should work, but does not, thus the need for xdotool
 
 # control loop, in background
 while true
@@ -54,7 +55,7 @@ do
     then
       echo "ASSEMBLER ERROR"
       echo
-      echo "$result" |
+      echo "$result" |     # do a nicer job of displaying assembly errors
       awk '/vasmm68k_mot/{next}
 	   /Volker Barthelmann/{next}
 	   /ColdFire cpu backend/{next}
@@ -64,13 +65,12 @@ do
       sleep 1
     else
       echo "$result"|grep -i -e data -e code -e bss
-      ls -l ${filebase}.tos
-      size=$(stat --printf "%s" ${filebase}.tos)
+      ls -l ${createdexec}
+      size=$(stat --printf "%s" ${createdexec})
       echo "Size minus 32 bytes header: $((size-32))"
       rm AUTO/*   # clean AUTO
-      cp ${filebase}.tos AUTO/${filebase}.prg   # copy exec
+      cp ${createdexec} AUTO/${filebase}.prg   # copy exec (only PRG extension is allowed in AUTO)
       xy=$(xdotool getmouselocation|sed 's/x://;s/y://;s/ screen.*$//')
-#      hatari --drive-a off --drive-b off ${filebase}.tos 2>&1| 
       cp "$hatarisav".bak "$hatarisav"  # get the savestate back
       killall -9 hatari;   # the loop below will restart automatically
       while [ "$(xdotool getmouselocation|sed 's/x://;s/y://;s/ screen.*$//')" = "$xy" ]
