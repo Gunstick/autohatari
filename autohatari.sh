@@ -2,7 +2,7 @@
 # GPLv3 2021 by Gunstick/ULM
 hatarisav=.autohatari.sav
 hataricfg=.autohatari.cfg
-for tool in xdotool/xdotool inotify-tools/inotifywait hatari/hatari
+for tool in xdotool/xdotool inotify-tools/inotifywait hatari/hatari zenity/zenity
 do
   pkg="$(echo "$tool" | cut -d/ -f1)"
   cmd="$(echo "$tool" | cut -d/ -f2)"
@@ -30,7 +30,8 @@ then
        /EnableDriveB =/{$3="FALSE"}
        {print}' ~/.hatari/hatari.cfg > "$hataricfg"
   hatari --drive-a off --drive-b off -c "$hataricfg" &
-  sleep 2.8  # this is the time TOS needs to start reading AUTO 
+  # maybe need to test this dynamically to find the best time, or use a breakpoint?
+  sleep 2.7  # this is the time TOS needs to start reading AUTO 
   xdotool key ISO_Level3_Shift+k 
   sleep 1
   kill -9 $!
@@ -55,6 +56,7 @@ do
     then
       echo "ASSEMBLER ERROR"
       echo
+      result="$(
       echo "$result" |     # do a nicer job of displaying assembly errors
       awk '/vasmm68k_mot/{next}
 	   /Volker Barthelmann/{next}
@@ -62,6 +64,14 @@ do
 	   /motorola syntax module/{next}
 	   /output module/{next}
           {print "VASM: " $0}'
+      )"
+      echo "$result"
+      zenity --text-info --title 'VASM output' --width=800 --height=600 --filename=/dev/stdin --font=monospace <<<"$result" &
+      zenityPID=$!
+      sleep 0.5   # wait for zenity window to actually be there
+      zWID=$(xdotool search --onlyvisible --name '^VASM output')
+      killall hatari    # stop hatari as there is an error, so not displaying anything instead of "working code" which is old
+      xdotool windowmove $zWID 0 0
       sleep 1
     else
       echo "$result"|grep -i -e data -e code -e bss
@@ -79,11 +89,25 @@ do
       done
       sleep 0.1  # wait a little more
       xdotool mousemove $xy    # move mouse back
-      WID=$(xdotool search --onlyvisible --name '^hatari')
+      WID=$(xdotool search --onlyvisible --name '^hatari v')
+      if [ "$(echo "$WID" | wc -l)" -ne 1 ]
+      then
+        echo "Cant find window"
+        echo "$WID" | while read w
+        do
+          xdotool getwindowname $w
+        done
+        exit
+      fi 
       xdotool windowmove $WID 0 0    # move hatari window to top left corner
     fi
     inotifywait -e move_self -e modify -e attrib -e close_write  "$@" >/dev/null 2>&1
-    if [ $? -eq 1 ]
+    inotifywaitRS=$?
+    if kill -0 $zenityPID 2>/dev/null
+    then
+      kill -9 $zenityPID
+    fi
+    if [ $inotifywaitRS -eq 1 ]
     then
       echo "Problem with watching $@, exiting"
       kill -3 $$
@@ -93,11 +117,16 @@ do
 done &
 BGloop=$!
 # hatari main loop, in foreground, so that debugger works
-trap "kill $BGloop ; exit" 1 2 3
+trap "kill $BGloop ; killall hatari ; killall zenity ; exit" 1 2 3    # yeah, may kill other zenity on the machine...
 while true
 do
   echo "press CTRL-C to quit"
   hatari --bios-intercept yes -c "$hataricfg" 
+  # if zenity is running, means we have an error
+  while [ "$(xdotool search --onlyvisible --name '^VASM output')" != "" ]
+  do
+    sleep 1
+  done
   #echo "hatari return code: $?"
   # bios-intercept allows to jump to debugger
   # example macro to call debugger from program:
